@@ -24,6 +24,13 @@ app.config['JSON_AS_ASCII'] = False
 
 # ========== AUTENTICACIÓN JWT ==========
 
+@app.route("/", methods=["GET"])
+def root():
+    return jsonify({
+        "status": "ok",
+        "message": "UniPlanner API corriendo 🚀"
+    }), 200
+
 def generar_token(usuario_id: int) -> str:
     """Genera un token JWT para el usuario"""
     payload = {
