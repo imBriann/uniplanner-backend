@@ -13,6 +13,9 @@ from functools import wraps
 # Importar modelos actualizados
 from poo_models_postgres import Usuario, Curso, Tarea, CalendarioInstitucional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Configuración
 app = Flask(__name__)
 CORS(app)
