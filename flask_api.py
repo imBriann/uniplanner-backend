@@ -19,7 +19,7 @@ load_dotenv()
 # Configuración
 app = Flask(__name__)
 CORS(app)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 app.config['JSON_AS_ASCII'] = False
 
 # ========== AUTENTICACIÓN JWT ==========
@@ -32,15 +32,13 @@ def root():
     }), 200
 
 def generar_token(usuario_id: int) -> str:
-    """Genera un token JWT para el usuario"""
     payload = {
         'user_id': usuario_id,
-        'exp': datetime.utcnow() + timedelta(days=30)
+        'exp': datetime.utcnow() + timedelta(hours=1)
     }
     return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
 
 def token_requerido(f):
-    """Decorator para endpoints que requieren autenticación"""
     @wraps(f)
     def decorador(*args, **kwargs):
         token = request.headers.get('Authorization')
@@ -65,7 +63,7 @@ def token_requerido(f):
             return jsonify({'error': 'Token expirado'}), 401
         except jwt.InvalidTokenError:
             return jsonify({'error': 'Token inválido'}), 401
-    
+
     return decorador
 
 
@@ -73,7 +71,6 @@ def token_requerido(f):
 
 @app.route('/api/auth/registro', methods=['POST'])
 def registro():
-    """POST /api/auth/registro"""
     try:
         data = request.get_json()
         
@@ -128,10 +125,10 @@ def registro():
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    """POST /api/auth/login"""
+
     try:
         data = request.get_json()
-        print(f"📩 Intento de login: {data.get('email')}")
+        #print(f"Intento de login: {data.get('email')}")
         
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email y contraseña requeridos'}), 400
@@ -139,10 +136,10 @@ def login():
         usuario = Usuario.autenticar(data['email'], data['password'])
         
         if not usuario:
-            print("❌ Usuario no encontrado o contraseña incorrecta")
+            #print("Usuario no encontrado o contraseña incorrecta")
             return jsonify({'error': 'Credenciales incorrectas'}), 401
         
-        print(f"✅ Usuario encontrado: {usuario.id}")
+        #print(f"Usuario encontrado: {usuario.id}")
         
         token = generar_token(usuario.id)
         
@@ -150,7 +147,7 @@ def login():
         if isinstance(token, bytes):
             token = token.decode('utf-8')
         
-        print(f"🔑 Token generado: {token[:10]}...")
+        #"print(f"Token generado: {token}")
         
         return jsonify({
             'success': True,
@@ -169,7 +166,7 @@ def login():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"🔥 ERROR CRÍTICO: {str(e)}")
+        print(f"ERROR: {str(e)}")
         return jsonify({'error': f'Error interno: {str(e)}'}), 500
 
 
@@ -536,7 +533,7 @@ def obtener_eventos_calendario():
     })
 
 
-# ========== HEALTH CHECK ==========
+'''# ========== HEALTH CHECK ==========
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -545,7 +542,7 @@ def health_check():
         'status': 'ok',
         'mensaje': 'API funcionando correctamente',
         'version': '2.0.0 - Estructura Actualizada'
-    })
+    })'''
 
 
 # ========== ERROR HANDLERS ==========
@@ -562,10 +559,7 @@ def internal_error(error):
 # ========== MAIN ==========
 
 if __name__ == '__main__':
-    print("🚀 Iniciando API REST - Sistema Académico Unipamplona")
-    print("=" * 70)
-    print("📡 Servidor corriendo en: http://localhost:5000")
-    print("📚 Health Check: http://localhost:5000/api/health")
-    print("=" * 70)
+    print("Iniciando API\n")
+    print("Servidor en: http://localhost:5000")
     
     app.run(debug=True, host='0.0.0.0', port=5000)

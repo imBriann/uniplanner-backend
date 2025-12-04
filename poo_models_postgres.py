@@ -1,8 +1,3 @@
-"""
-Modelos POO con PostgreSQL - Sistema Académico Unipamplona
-Compatible con Render y ambientes de producción
-"""
-
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
@@ -24,10 +19,8 @@ class DatabaseModel:
         if not database_url:
             raise ValueError(
                 "DATABASE_URL no está configurada. "
-                "Configúrala como variable de entorno."
             )
         
-        # Render usa postgresql:// pero psycopg2 necesita postgres://
         if database_url.startswith('postgresql://'):
             database_url = database_url.replace('postgresql://', 'postgres://', 1)
         
@@ -35,14 +28,12 @@ class DatabaseModel:
     
     @staticmethod
     def encriptar_password(password: str) -> str:
-        """Encripta contraseña con SHA-256"""
         return hashlib.sha256(password.encode()).hexdigest()
 
 
 # ========== USUARIO ==========
 
 class Usuario(DatabaseModel):
-    """Modelo de Usuario"""
     
     def __init__(self, id=None, nombre=None, apellido=None, email=None,
                  carrera=None, semestre_actual=None, tipo_estudio=None):
@@ -63,7 +54,6 @@ class Usuario(DatabaseModel):
               semestre_actual: int, tipo_estudio: str,
               materias_aprobadas: List[str] = None,
               materias_cursando: List[str] = None) -> 'Usuario':
-        """Crea un nuevo usuario"""
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -103,7 +93,7 @@ class Usuario(DatabaseModel):
             
         except psycopg2.IntegrityError:
             conn.rollback()
-            raise ValueError(f"El email '{email}' ya está registrado")
+            raise ValueError(f"El correo '{email}' ya está registrado")
         except Exception as e:
             conn.rollback()
             raise e

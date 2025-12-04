@@ -12,55 +12,25 @@ import operator
 # ========== FUNCIONES DE CÁLCULO (PROGRAMACIÓN FUNCIONAL PURA) ==========
 
 def calcular_urgencia(tarea, fecha_actual: datetime) -> float:
-    """
-    Calcula la urgencia de una tarea basado en días restantes
-    
-    Fórmula: Mientras más cerca la fecha, mayor urgencia (0-10)
-    - 0 días = urgencia 10
-    - 10+ días = urgencia 0
-    """
     dias_restantes = (tarea.fecha_limite - fecha_actual).days
     return max(0, min(10, 10 - dias_restantes))
 
 
 def calcular_peso_materia(tarea) -> float:
-    """
-    Calcula el peso de la materia según créditos
-    
-    Fórmula: peso = creditos * 2
-    """
     return tarea.curso.creditos * 2
 
 
 def calcular_factor_dificultad(tarea) -> float:
-    """
-    Calcula el factor de dificultad de la tarea
-    
-    Fórmula: dificultad * 1.5
-    """
     return tarea.dificultad * 1.5
 
 
 def calcular_factor_tiempo(tarea) -> float:
-    """
-    Calcula el factor de tiempo requerido
-    
-    Fórmula: Si requiere más de 8h, aumenta el peso
-    """
     if tarea.horas_estimadas > 8:
         return tarea.horas_estimadas * 0.3
     return tarea.horas_estimadas * 0.2
 
 
 def calcular_bonus_tipo(tarea) -> float:
-    """
-    Asigna bonus según el tipo de tarea
-    
-    parcial/final = +5 puntos
-    proyecto = +3 puntos
-    taller = +1 punto
-    lectura = +0.5 puntos
-    """
     bonus_map = {
         'parcial': 5.0,
         'final': 5.0,
@@ -75,13 +45,6 @@ def calcular_bonus_tipo(tarea) -> float:
 # ========== FUNCIÓN PRINCIPAL DE PUNTAJE ==========
 
 def calcular_puntaje_prioridad(tarea, fecha_actual: datetime) -> float:
-    """
-    Calcula el puntaje de prioridad combinando todos los factores
-    
-    Puntaje = urgencia + peso_materia + dificultad + tiempo + bonus_tipo
-    
-    Esta es una función pura que no tiene efectos secundarios
-    """
     urgencia = calcular_urgencia(tarea, fecha_actual)
     peso = calcular_peso_materia(tarea)
     dificultad = calcular_factor_dificultad(tarea)

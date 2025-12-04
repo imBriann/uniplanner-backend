@@ -1,8 +1,3 @@
-"""
-Sistema de Gestión Académica Unipamplona
-Base de datos PostgreSQL para producción en Render
-"""
-
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
@@ -17,16 +12,13 @@ class DatabaseManager:
     """Gestor de base de datos PostgreSQL"""
     
     def __init__(self, database_url=None):
-        # Leer URL de conexión desde variable de entorno o argumento
         self.database_url = database_url or os.environ.get('DATABASE_URL')
         
         if not self.database_url:
             raise ValueError(
                 "No se encontró DATABASE_URL. "
-                "Configúrala como variable de entorno o pásala como argumento."
             )
         
-        # Render usa postgresql:// pero psycopg2 necesita postgres://
         if self.database_url.startswith('postgresql://'):
             self.database_url = self.database_url.replace('postgresql://', 'postgres://', 1)
         
@@ -39,17 +31,17 @@ class DatabaseManager:
                 self.database_url,
                 cursor_factory=RealDictCursor
             )
-            print("✅ Conexión exitosa a PostgreSQL")
+            print("Conexión exitosa a PostgreSQL")
             return self.conn
         except Exception as e:
-            print(f"❌ Error conectando a PostgreSQL: {e}")
+            print(f"Error conectando a PostgreSQL: {e}")
             raise
     
     def close(self):
         """Cierra la conexión"""
         if self.conn:
             self.conn.close()
-            print("🔌 Conexión cerrada")
+            print("Conexión cerrada")
     
     def crear_tablas(self):
         """Crea todas las tablas del sistema"""
@@ -147,7 +139,7 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_materias_usuario ON materias_actuales(usuario_id)')
         
         self.conn.commit()
-        print("✅ Tablas creadas exitosamente")
+        print("Tablas creadas exitosamente")
     
     def insertar_pensum_sistemas(self):
         """Inserta el pensum completo de Ingeniería de Sistemas"""
@@ -259,7 +251,7 @@ class DatabaseManager:
                 print(f"Error insertando {materia['codigo']}: {e}")
         
         self.conn.commit()
-        print(f"✅ Pensum insertado: {insertadas} materias")
+        print(f"Pensum insertado: {insertadas} materias")
     
     def insertar_calendario_2025(self):
         """Inserta fechas del calendario académico 2025"""
@@ -288,13 +280,13 @@ class DatabaseManager:
             ''', evento)
         
         self.conn.commit()
-        print(f"✅ Calendario actualizado: {len(eventos)} eventos")
+        print(f"Calendario actualizado: {len(eventos)} eventos")
 
 
 def inicializar_base_datos(database_url=None):
     """Función principal de inicialización"""
     print("=" * 70)
-    print("🚀 Inicializando Sistema Académico Unipamplona (PostgreSQL)")
+    print("Inicializando Sistema Académico Unipamplona (PostgreSQL)")
     print("=" * 70)
     
     try:
@@ -306,20 +298,18 @@ def inicializar_base_datos(database_url=None):
         db.insertar_calendario_2025()
         
         print("=" * 70)
-        print("✅ Base de datos PostgreSQL inicializada correctamente")
+        print("Base de datos PostgreSQL inicializada correctamente")
         print("=" * 70)
         
         db.close()
         return True
         
     except Exception as e:
-        print(f"❌ Error inicializando base de datos: {e}")
+        print(f"Error inicializando base de datos: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 if __name__ == "__main__":
-    # Ejecutar inicialización
-    # La URL se lee desde la variable de entorno DATABASE_URL
     inicializar_base_datos()
