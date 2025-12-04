@@ -304,7 +304,7 @@ obtener_proximas_5_pendientes = compose(
 
 if __name__ == "__main__":
     # Este código requiere que hayas ejecutado primero el script de base de datos
-    from poo_models_sqlite import Usuario
+    from poo_models_postgres import Usuario
     
     print("🎯 Sistema de Recomendaciones Inteligentes\n")
     print("=" * 60)
