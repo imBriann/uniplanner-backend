@@ -258,19 +258,53 @@ class DatabaseManager:
         cursor = self.conn.cursor()
         
         eventos = [
-            ("Inicio de Clases 2025-1", "2025-01-20", None, "inicio_clases", "2025-1", "#10B981"),
-            ("Primer Parcial 2025-1", "2025-03-10", "2025-03-14", "parcial", "2025-1", "#F59E0B"),
-            ("Segundo Parcial 2025-1", "2025-04-21", "2025-04-25", "parcial", "2025-1", "#F59E0B"),
-            ("Cancelación Materias", "2025-04-25", None, "cancelacion", "2025-1", "#EF4444"),
-            ("Examen Final 2025-1", "2025-05-19", "2025-05-23", "final", "2025-1", "#DC2626"),
-            ("Inscripciones 2025-2", "2025-06-02", "2025-06-13", "inscripcion", "2025-2", "#3B82F6"),
-            ("Inicio Clases 2025-2", "2025-07-28", None, "inicio_clases", "2025-2", "#10B981"),
-            ("Primer Parcial 2025-2", "2025-09-22", "2025-09-26", "parcial", "2025-2", "#F59E0B"),
-            ("Segundo Parcial 2025-2", "2025-10-27", "2025-10-31", "parcial", "2025-2", "#F59E0B"),
-            ("Cancelación 2025-2", "2025-10-31", None, "cancelacion", "2025-2", "#EF4444"),
-            ("Examen Final 2025-2", "2025-11-24", "2025-11-28", "final", "2025-2", "#DC2626")
+            # INICIO DE CLASES
+            ("Inicio de Clases 2025-1", "2025-03-03", None, "inicio_clases", "2025-1", "#10B981"),
+
+            # PRIMER CORTE
+            ("Primer Corte 2025-1", "2025-03-03", "2025-04-26", "corte", "2025-1", "#3B82F6"),
+            ("Evaluaciones Primer Corte", "2025-04-07", "2025-04-12", "parcial", "2025-1", "#F59E0B"),
+            ("Registro Notas Primer Corte", "2025-04-21", "2025-04-26", "registro", "2025-1", "#6366F1"),
+
+            # SEGUNDO CORTE
+            ("Segundo Corte 2025-1", "2025-04-21", "2025-05-24", "corte", "2025-1", "#3B82F6"),
+            ("Evaluaciones Segundo Corte", "2025-05-19", "2025-05-24", "parcial", "2025-1", "#F59E0B"),
+            ("Registro Notas Segundo Corte", "2025-05-26", "2025-05-31", "registro", "2025-1", "#6366F1"),
+
+            # CANCELACIONES
+            ("Cancelación de Asignaturas 2025-1", "2025-06-03", "2025-06-07", "cancelacion", "2025-1", "#EF4444"),
+            ("Cancelación de Semestre 2025-1", "2025-06-03", "2025-06-07", "cancelacion", "2025-1", "#EF4444"),
+
+            # TERCER CORTE
+            ("Tercer Corte 2025-1", "2025-05-26", "2025-06-28", "corte", "2025-1", "#3B82F6"),
+            ("Evaluaciones Tercer Corte", "2025-06-24", "2025-06-28", "parcial", "2025-1", "#F59E0B"),
+            ("Registro Notas Tercer Corte", "2025-06-24", "2025-06-28", "registro", "2025-1", "#6366F1"),
+
+            # FIN DEL SEMESTRE
+            ("Fin de Clases 2025-1", "2025-06-28", None, "fin_clases", "2025-1", "#DC2626"),
+            ("Ingreso Nota Trabajo de Grado", "2025-06-28", None, "grado", "2025-1", "#10B981"),
+
+            # HABILITACIONES
+            ("Inscripción Habilitaciones", "2025-07-01", None, "habilitacion", "2025-1", "#A855F7"),
+            ("Exámenes de Habilitación", "2025-07-01", "2025-07-03", "habilitacion", "2025-1", "#A855F7"),
+            ("Registro Notas Habilitación", "2025-07-03", None, "habilitacion", "2025-1", "#A855F7"),
+
+            # EVALUACIÓN DOCENTE
+            ("Evaluación Docente 2025-1", "2025-06-16", "2025-06-21", "evaluacion", "2025-1", "#14B8A6"),
+
+            # VACACIONES DOCENTES
+            ("Vacaciones Docentes", "2025-07-04", "2025-07-18", "vacaciones", "2025-1", "#0EA5E9"),
+
+            # VALIDACIONES
+            ("Inscripciones Validaciones", "2025-03-31", "2025-04-04", "validacion", "2025-1", "#F43F5E"),
+            ("Publicación Validaciones", "2025-04-24", None, "validacion", "2025-1", "#F43F5E"),
+            ("Pago Validaciones", "2025-04-28", "2025-05-02", "validacion", "2025-1", "#F43F5E"),
+            ("Asignación Jurados Validación", "2025-05-06", "2025-05-07", "validacion", "2025-1", "#F43F5E"),
+            ("Cancelación Validaciones", "2025-05-08", None, "validacion", "2025-1", "#F43F5E"),
+            ("Exámenes Validación", "2025-05-19", "2025-05-20", "validacion", "2025-1", "#F43F5E"),
+            ("Registro Notas Validación", "2025-05-22", None, "validacion", "2025-1", "#F43F5E"),
         ]
-        
+
         for evento in eventos:
             cursor.execute('''
             INSERT INTO calendario_institucional 
