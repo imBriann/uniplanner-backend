@@ -459,6 +459,70 @@ def login():
             'codigo': 'SERVER_ERROR'
         }), 500
 
+# ========== ENDPOINTS DE CURSOS ==========
+
+@app.route('/api/cursos', methods=['GET'])
+def obtener_cursos():
+    """GET /api/cursos?semestre=1"""
+    semestre = request.args.get('semestre', type=int)
+
+    if semestre:
+        cursos = Curso.obtener_por_semestre(semestre)
+    else:
+        cursos = Curso.obtener_todos()
+
+    return jsonify({
+        'cursos': [{
+            'codigo': c.codigo,
+            'nombre': c.nombre,
+            'creditos': c.creditos,
+            'semestre': c.semestre,
+            'requisitos': c.requisitos,
+            'creditos_requisitos': c.creditos_requisitos
+        } for c in cursos]
+    })
+
+
+@app.route('/api/cursos/<codigo>', methods=['GET'])
+def obtener_curso(codigo):
+    """GET /api/cursos/{codigo}"""
+    curso = Curso.obtener_por_codigo(codigo)
+
+    if not curso:
+        return jsonify({'error': 'Curso no encontrado'}), 404
+
+    return jsonify({
+        'codigo': curso.codigo,
+        'nombre': curso.nombre,
+        'creditos': curso.creditos,
+        'semestre': curso.semestre,
+        'ht': curso.ht,
+        'hp': curso.hp,
+        'requisitos': curso.requisitos,
+        'creditos_requisitos': curso.creditos_requisitos
+    })
+
+
+@app.route('/api/cursos/buscar', methods=['GET'])
+def buscar_cursos():
+    """GET /api/cursos/buscar?q=programacion"""
+    termino = request.args.get('q', '')
+
+    if not termino:
+        return jsonify({'error': 'Parámetro q requerido'}), 400
+
+    cursos = Curso.buscar(termino)
+
+    return jsonify({
+        'resultados': [{
+            'codigo': c.codigo,
+            'nombre': c.nombre,
+            'creditos': c.creditos,
+            'semestre': c.semestre,
+            'requisitos': c.requisitos
+        } for c in cursos]
+    })
+
 
 # ========== ENDPOINTS DE USUARIO ==========
 
@@ -523,6 +587,70 @@ def obtener_perfil(usuario):
             'codigo': 'PERFIL_ERROR'
         }), 500
 
+@app.route('/api/usuario/materias/actuales', methods=['GET'])
+@token_requerido
+def obtener_materias_actuales(usuario):
+    """GET /api/usuario/materias/actuales"""
+    materias = usuario.obtener_materias_actuales()
+
+    return jsonify({
+        'materias': [{
+            'codigo': m.codigo,
+            'nombre': m.nombre,
+            'creditos': m.creditos,
+            'semestre': m.semestre,
+            'requisitos': m.requisitos
+        } for m in materias]
+    })
+
+
+@app.route('/api/usuario/materias/aprobadas', methods=['GET'])
+@token_requerido
+def obtener_materias_aprobadas(usuario):
+    """GET /api/usuario/materias/aprobadas"""
+    materias = usuario.obtener_materias_aprobadas()
+
+    return jsonify({
+        'materias': [{
+            'codigo': m.codigo,
+            'nombre': m.nombre,
+            'creditos': m.creditos,
+            'semestre': m.semestre
+        } for m in materias]
+    })
+
+
+@app.route('/api/usuario/materias/inscribir', methods=['POST'])
+@token_requerido
+def inscribir_materia(usuario):
+    """POST /api/usuario/materias/inscribir"""
+    data = request.get_json()
+    codigo = data.get('codigo_materia')
+
+    if not codigo:
+        return jsonify({'error': 'codigo_materia requerido'}), 400
+
+    try:
+        usuario.inscribir_materia(codigo)
+        return jsonify({'success': True, 'mensaje': 'Materia inscrita'}), 200
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/usuario/materias/cancelar', methods=['POST'])
+@token_requerido
+def cancelar_materia(usuario):
+    """POST /api/usuario/materias/cancelar"""
+    data = request.get_json()
+    codigo = data.get('codigo_materia')
+
+    if not codigo:
+        return jsonify({'error': 'codigo_materia requerido'}), 400
+
+    if usuario.cancelar_materia(codigo):
+        return jsonify({'success': True, 'mensaje': 'Materia cancelada'}), 200
+    else:
+        return jsonify({'error': 'No se pudo cancelar la materia'}), 400
 
 # ========== ENDPOINTS DE NOTIFICACIONES ==========
 
