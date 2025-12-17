@@ -1,18 +1,3 @@
-"""
-Sistema de Logging Profesional para UniPlanner
-
-Implementa un sistema de logging estructurado con:
-- Niveles apropiados de log (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- Colores en consola para desarrollo
-- Rotación automática de archivos
-- Formato detallado con timestamps y contexto
-
-Paradigma: Programación Estructurada
-Autor: [Tu Nombre]
-Fecha: 2025-01-08
-Versión: 1.0.0
-"""
-
 import logging
 import os
 import sys

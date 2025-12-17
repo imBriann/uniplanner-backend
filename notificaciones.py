@@ -1,16 +1,3 @@
-"""
-Sistema de Notificaciones Inteligentes para UniPlanner
-
-Genera notificaciones y recordatorios personalizados basados en:
-- Tareas próximas a vencer
-- Patrones de estudio del usuario
-- Eventos del calendario académico
-
-Paradigma: Programación Orientada a Objetos + Funcional
-Autor: [Tu Nombre]
-Fecha: 2025-01-08
-"""
-
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from enum import Enum
