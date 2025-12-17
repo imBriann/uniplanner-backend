@@ -22,30 +22,55 @@ import os
 from functools import wraps
 from typing import Optional, Dict, Any
 
-# Importar configuración y utilidades
-from config import get_config, AppConstants
-from logger import setup_logger, log_request, log_error_with_context
-from validadores import (
-    validar_datos_registro,
-    validar_datos_tarea,
-    validar_email,
-    validar_password
-)
-
 # Importar modelos
 from poo_models_postgres import Usuario, Curso, Tarea, CalendarioInstitucional
 
-# Importar sistema de recomendaciones
-from recomendaciones_funcional import (
-    generar_recomendaciones,
-    calcular_carga_semanal,
-    obtener_tareas_urgentes,
-    calcular_estadisticas_funcionales,
-    generar_plan_estudio
-)
+# Intentar importar módulos opcionales (no críticos)
+try:
+    from config import get_config, AppConstants
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+    print("⚠️  Módulo config.py no disponible, usando configuración por defecto")
 
-# Importar sistema de notificaciones
-from notificaciones import GestorNotificaciones
+try:
+    from logger import setup_logger, log_request, log_error_with_context
+    LOGGER_AVAILABLE = True
+except ImportError:
+    LOGGER_AVAILABLE = False
+    print("⚠️  Módulo logger.py no disponible, usando print por defecto")
+    
+try:
+    from validadores import (
+        validar_datos_registro,
+        validar_datos_tarea,
+        validar_email,
+        validar_password
+    )
+    VALIDATORS_AVAILABLE = True
+except ImportError:
+    VALIDATORS_AVAILABLE = False
+    print("⚠️  Módulo validadores.py no disponible, usando validación básica")
+
+try:
+    from recomendaciones_funcional import (
+        generar_recomendaciones,
+        calcular_carga_semanal,
+        obtener_tareas_urgentes,
+        calcular_estadisticas_funcionales,
+        generar_plan_estudio
+    )
+    RECOMMENDATIONS_AVAILABLE = True
+except ImportError:
+    RECOMMENDATIONS_AVAILABLE = False
+    print("⚠️  Módulo recomendaciones_funcional.py no disponible")
+
+try:
+    from notificaciones import GestorNotificaciones
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    NOTIFICATIONS_AVAILABLE = False
+    print("⚠️  Módulo notificaciones.py no disponible")
 
 # Cargar variables de entorno
 from dotenv import load_dotenv
@@ -54,11 +79,25 @@ load_dotenv()
 # ========== CONFIGURACIÓN DE LA APLICACIÓN ==========
 
 # Obtener configuración según ambiente
-config = get_config(os.environ.get('FLASK_ENV', 'development'))
+if CONFIG_AVAILABLE:
+    config = get_config(os.environ.get('FLASK_ENV', 'development'))
+else:
+    # Configuración por defecto si no hay módulo config
+    class DefaultConfig:
+        SECRET_KEY = os.environ.get('SECRET_KEY')
+        CORS_ORIGINS = ['*']
+        LOG_LEVEL = 'INFO'
+        JWT_EXPIRATION = timedelta(hours=24)
+        JWT_ALGORITHM = 'HS256'
+        HORAS_ESTUDIO_INTENSIVO = 6
+        HORAS_ESTUDIO_MODERADO = 4
+        HORAS_ESTUDIO_LEVE = 2.5
+    config = DefaultConfig()
 
 # Crear instancia de Flask
 app = Flask(__name__)
-app.config.from_object(config)
+app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['JSON_AS_ASCII'] = False
 
 # Configurar CORS
 CORS(app, resources={
@@ -70,12 +109,23 @@ CORS(app, resources={
 })
 
 # Configurar logger
-logger = setup_logger('uniplanner_api', config.LOG_LEVEL)
+if LOGGER_AVAILABLE:
+    logger = setup_logger('uniplanner_api', config.LOG_LEVEL)
+    logger.info("🚀 Aplicación UniPlanner iniciada")
+else:
+    # Logger dummy si no está disponible
+    class DummyLogger:
+        def info(self, msg): print(f"INFO: {msg}")
+        def warning(self, msg): print(f"WARNING: {msg}")
+        def error(self, msg): print(f"ERROR: {msg}")
+        def debug(self, msg): print(f"DEBUG: {msg}")
+    logger = DummyLogger()
 
 # Inicializar gestor de notificaciones
-gestor_notificaciones = GestorNotificaciones()
-
-logger.info("🚀 Aplicación UniPlanner iniciada")
+if NOTIFICATIONS_AVAILABLE:
+    gestor_notificaciones = GestorNotificaciones()
+else:
+    gestor_notificaciones = None
 
 
 # ========== UTILIDADES JWT ==========
@@ -84,23 +134,11 @@ def generar_token(usuario_id: int) -> str:
     """
     Genera token JWT para autenticación del usuario.
     
-    El token incluye:
-    - user_id: Identificador del usuario
-    - exp: Timestamp de expiración
-    
     Args:
         usuario_id: ID del usuario en la base de datos
     
     Returns:
         String con el token JWT codificado
-    
-    Raises:
-        Exception: Si hay error al generar el token
-    
-    Example:
-        >>> token = generar_token(123)
-        >>> print(token)
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
     """
     try:
         payload = {
@@ -115,7 +153,7 @@ def generar_token(usuario_id: int) -> str:
             algorithm=config.JWT_ALGORITHM
         )
         
-        # Asegurar que sea string (PyJWT 2.x retorna string, 1.x bytes)
+        # Asegurar que sea string
         if isinstance(token, bytes):
             token = token.decode('utf-8')
         
@@ -130,25 +168,6 @@ def generar_token(usuario_id: int) -> str:
 def token_requerido(f):
     """
     Decorador que valida el token JWT en las peticiones.
-    
-    Este decorador:
-    1. Extrae el token del header Authorization
-    2. Valida el token contra SECRET_KEY
-    3. Obtiene el usuario de la base de datos
-    4. Pasa el usuario como primer argumento a la función decorada
-    
-    Args:
-        f: Función a decorar (endpoint de Flask)
-    
-    Returns:
-        Función decorada con validación de token
-    
-    Example:
-        @app.route('/api/perfil')
-        @token_requerido
-        def obtener_perfil(usuario):
-            # usuario ya está autenticado y disponible
-            return jsonify({'nombre': usuario.nombre})
     """
     @wraps(f)
     def decorador(*args, **kwargs):
@@ -180,17 +199,18 @@ def token_requerido(f):
             if not usuario:
                 logger.warning(f"Usuario {usuario_id} no encontrado para token válido")
                 return jsonify({
-                    'error': AppConstants.ERROR_USUARIO_NO_ENCONTRADO,
+                    'error': 'Usuario no encontrado',
                     'codigo': 'USUARIO_NO_ENCONTRADO'
                 }), 401
             
             # Log de petición autenticada
-            log_request(logger, {
-                'method': request.method,
-                'path': request.path,
-                'user_id': usuario_id,
-                'ip': request.remote_addr
-            })
+            if LOGGER_AVAILABLE:
+                log_request(logger, {
+                    'method': request.method,
+                    'path': request.path,
+                    'user_id': usuario_id,
+                    'ip': request.remote_addr
+                })
             
             # Llamar función original con usuario como primer argumento
             return f(usuario, *args, **kwargs)
@@ -205,15 +225,18 @@ def token_requerido(f):
         except jwt.InvalidTokenError as e:
             logger.warning(f"Token inválido: {e}")
             return jsonify({
-                'error': AppConstants.ERROR_TOKEN_INVALIDO,
+                'error': 'Token inválido',
                 'codigo': 'TOKEN_INVALIDO'
             }), 401
             
         except Exception as e:
-            log_error_with_context(logger, e, {
-                'funcion': 'token_requerido',
-                'path': request.path
-            })
+            if LOGGER_AVAILABLE:
+                log_error_with_context(logger, e, {
+                    'funcion': 'token_requerido',
+                    'path': request.path
+                })
+            else:
+                logger.error(f"Error en autenticación: {e}")
             return jsonify({
                 'error': 'Error de autenticación',
                 'codigo': 'ERROR_AUTENTICACION'
@@ -226,14 +249,7 @@ def token_requerido(f):
 
 @app.route("/", methods=["GET"])
 def root():
-    """
-    Endpoint raíz de la API.
-    
-    Proporciona información básica sobre el estado de la API.
-    
-    Returns:
-        JSON con status y mensaje de bienvenida
-    """
+    """Endpoint raíz de la API."""
     return jsonify({
         "status": "ok",
         "mensaje": "UniPlanner API corriendo 🚀",
@@ -244,20 +260,7 @@ def root():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """
-    Health check endpoint para monitoreo del sistema.
-    
-    Verifica que:
-    - La API está respondiendo
-    - La conexión a base de datos funciona
-    
-    Returns:
-        JSON con estado del sistema
-        
-    HTTP Status:
-        200: Sistema funcionando correctamente
-        503: Servicio no disponible
-    """
+    """Health check endpoint para monitoreo del sistema."""
     try:
         # Intentar conexión a base de datos
         from poo_models_postgres import DatabaseModel
@@ -268,7 +271,14 @@ def health_check():
             'status': 'ok',
             'mensaje': 'Sistema operando normalmente',
             'timestamp': datetime.now().isoformat(),
-            'version': '3.0'
+            'version': '2.1.0',
+            'modules': {
+                'config': CONFIG_AVAILABLE,
+                'logger': LOGGER_AVAILABLE,
+                'validators': VALIDATORS_AVAILABLE,
+                'recommendations': RECOMMENDATIONS_AVAILABLE,
+                'notifications': NOTIFICATIONS_AVAILABLE
+            }
         }), 200
         
     except Exception as e:
@@ -283,41 +293,7 @@ def health_check():
 
 @app.route('/api/auth/registro', methods=['POST'])
 def registro():
-    """
-    Registra un nuevo usuario en el sistema.
-    
-    Proceso:
-    1. Valida datos de entrada
-    2. Verifica que el email no esté registrado
-    3. Crea el usuario en la base de datos
-    4. Genera token JWT
-    5. Retorna datos del usuario y token
-    
-    Request Body:
-        {
-            "nombre": "Juan",
-            "apellido": "Pérez",
-            "email": "juan@unipamplona.edu.co",
-            "password": "Pass123",
-            "semestre_actual": 5,
-            "tipo_estudio": "moderado",
-            "materias_aprobadas": ["167390", "167392"],  # Opcional
-            "materias_cursando": ["167396", "167394"]    # Opcional
-        }
-    
-    Returns:
-        JSON con datos del usuario y token JWT
-        
-    HTTP Status:
-        201: Usuario creado exitosamente
-        400: Datos inválidos o email ya registrado
-        500: Error interno del servidor
-    
-    Example:
-        curl -X POST http://localhost:5000/api/auth/registro \\
-          -H "Content-Type: application/json" \\
-          -d '{"nombre":"Juan","apellido":"Pérez",...}'
-    """
+    """Registra un nuevo usuario en el sistema."""
     try:
         data = request.get_json()
         
@@ -328,13 +304,24 @@ def registro():
             }), 400
         
         # Validar datos de entrada
-        es_valido, mensaje_error = validar_datos_registro(data)
-        if not es_valido:
-            logger.warning(f"Datos de registro inválidos: {mensaje_error}")
-            return jsonify({
-                'error': mensaje_error,
-                'codigo': 'VALIDACION_FALLIDA'
-            }), 400
+        if VALIDATORS_AVAILABLE:
+            es_valido, mensaje_error = validar_datos_registro(data)
+            if not es_valido:
+                logger.warning(f"Datos de registro inválidos: {mensaje_error}")
+                return jsonify({
+                    'error': mensaje_error,
+                    'codigo': 'VALIDACION_FALLIDA'
+                }), 400
+        else:
+            # Validación básica manual
+            campos_requeridos = ['nombre', 'apellido', 'email', 'password', 
+                                'semestre_actual', 'tipo_estudio']
+            for campo in campos_requeridos:
+                if campo not in data:
+                    return jsonify({'error': f'Campo requerido: {campo}'}), 400
+            
+            if data['tipo_estudio'] not in ['intensivo', 'moderado', 'leve']:
+                return jsonify({'error': 'tipo_estudio debe ser: intensivo, moderado o leve'}), 400
         
         # Crear usuario
         usuario = Usuario.crear(
@@ -355,7 +342,7 @@ def registro():
         
         return jsonify({
             'success': True,
-            'mensaje': AppConstants.SUCCESS_REGISTRO,
+            'mensaje': 'Usuario registrado exitosamente',
             'token': token,
             'usuario': {
                 'id': usuario.id,
@@ -369,7 +356,6 @@ def registro():
         }), 201
         
     except ValueError as e:
-        # Errores de validación (ej: email duplicado)
         logger.warning(f"Error en registro: {str(e)}")
         return jsonify({
             'error': str(e),
@@ -377,10 +363,13 @@ def registro():
         }), 400
         
     except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/auth/registro',
-            'email': data.get('email', 'N/A')
-        })
+        if LOGGER_AVAILABLE:
+            log_error_with_context(logger, e, {
+                'endpoint': '/api/auth/registro',
+                'email': data.get('email', 'N/A')
+            })
+        else:
+            logger.error(f"Error en registro: {e}")
         return jsonify({
             'error': 'Error interno del servidor',
             'codigo': 'SERVER_ERROR'
@@ -389,24 +378,7 @@ def registro():
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    """
-    Autentica un usuario y genera token JWT.
-    
-    Request Body:
-        {
-            "email": "usuario@unipamplona.edu.co",
-            "password": "contraseña"
-        }
-    
-    Returns:
-        JSON con token JWT y datos del usuario
-        
-    HTTP Status:
-        200: Login exitoso
-        400: Datos faltantes
-        401: Credenciales incorrectas
-        500: Error interno
-    """
+    """Autentica un usuario y genera token JWT."""
     try:
         data = request.get_json()
         
@@ -425,7 +397,7 @@ def login():
         if not usuario:
             logger.warning(f"Login fallido para: {data['email']}")
             return jsonify({
-                'error': AppConstants.ERROR_AUTENTICACION,
+                'error': 'Credenciales incorrectas',
                 'codigo': 'CREDENCIALES_INCORRECTAS'
             }), 401
         
@@ -436,7 +408,7 @@ def login():
         
         return jsonify({
             'success': True,
-            'mensaje': AppConstants.SUCCESS_LOGIN,
+            'mensaje': 'Inicio de sesión exitoso',
             'token': token,
             'usuario': {
                 'id': usuario.id,
@@ -450,10 +422,54 @@ def login():
         }), 200
         
     except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/auth/login',
-            'email': data.get('email', 'N/A')
-        })
+        if LOGGER_AVAILABLE:
+            log_error_with_context(logger, e, {
+                'endpoint': '/api/auth/login',
+                'email': data.get('email', 'N/A')
+            })
+        else:
+            logger.error(f"Error en login: {e}")
+        return jsonify({
+            'error': 'Error interno del servidor',
+            'codigo': 'SERVER_ERROR'
+        }), 500
+
+@app.route('/api/auth/restablecer', methods=['POST'])
+def restablecer_contrasena():
+    """Solicita restablecer contrasena."""
+    try:
+        data = request.get_json()
+
+        if not data or not data.get('email'):
+            return jsonify({
+                'error': 'Email requerido',
+                'codigo': 'EMAIL_REQUERIDO'
+            }), 400
+
+        email = data['email'].lower().strip()
+
+        if VALIDATORS_AVAILABLE:
+            valido, error = validar_email(email)
+            if not valido:
+                return jsonify({
+                    'error': error,
+                    'codigo': 'EMAIL_INVALIDO'
+                }), 400
+        elif '@' not in email:
+            return jsonify({
+                'error': 'Email invalido',
+                'codigo': 'EMAIL_INVALIDO'
+            }), 400
+
+        logger.info(f"Solicitud de restablecer para: {email}")
+
+        return jsonify({
+            'success': True,
+            'mensaje': 'Solicitud enviada'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error restableciendo contrasena: {e}")
         return jsonify({
             'error': 'Error interno del servidor',
             'codigo': 'SERVER_ERROR'
@@ -464,64 +480,76 @@ def login():
 @app.route('/api/cursos', methods=['GET'])
 def obtener_cursos():
     """GET /api/cursos?semestre=1"""
-    semestre = request.args.get('semestre', type=int)
-
-    if semestre:
-        cursos = Curso.obtener_por_semestre(semestre)
-    else:
-        cursos = Curso.obtener_todos()
-
-    return jsonify({
-        'cursos': [{
-            'codigo': c.codigo,
-            'nombre': c.nombre,
-            'creditos': c.creditos,
-            'semestre': c.semestre,
-            'requisitos': c.requisitos,
-            'creditos_requisitos': c.creditos_requisitos
-        } for c in cursos]
-    })
+    try:
+        semestre = request.args.get('semestre', type=int)
+        
+        if semestre:
+            cursos = Curso.obtener_por_semestre(semestre)
+        else:
+            cursos = Curso.obtener_todos()
+        
+        return jsonify({
+            'cursos': [{
+                'codigo': c.codigo,
+                'nombre': c.nombre,
+                'creditos': c.creditos,
+                'semestre': c.semestre,
+                'requisitos': c.requisitos,
+                'creditos_requisitos': c.creditos_requisitos
+            } for c in cursos]
+        })
+    except Exception as e:
+        logger.error(f"Error obteniendo cursos: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/cursos/<codigo>', methods=['GET'])
 def obtener_curso(codigo):
     """GET /api/cursos/{codigo}"""
-    curso = Curso.obtener_por_codigo(codigo)
-
-    if not curso:
-        return jsonify({'error': 'Curso no encontrado'}), 404
-
-    return jsonify({
-        'codigo': curso.codigo,
-        'nombre': curso.nombre,
-        'creditos': curso.creditos,
-        'semestre': curso.semestre,
-        'ht': curso.ht,
-        'hp': curso.hp,
-        'requisitos': curso.requisitos,
-        'creditos_requisitos': curso.creditos_requisitos
-    })
+    try:
+        curso = Curso.obtener_por_codigo(codigo)
+        
+        if not curso:
+            return jsonify({'error': 'Curso no encontrado'}), 404
+        
+        return jsonify({
+            'codigo': curso.codigo,
+            'nombre': curso.nombre,
+            'creditos': curso.creditos,
+            'semestre': curso.semestre,
+            'ht': curso.ht,
+            'hp': curso.hp,
+            'requisitos': curso.requisitos,
+            'creditos_requisitos': curso.creditos_requisitos
+        })
+    except Exception as e:
+        logger.error(f"Error obteniendo curso: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/cursos/buscar', methods=['GET'])
 def buscar_cursos():
     """GET /api/cursos/buscar?q=programacion"""
-    termino = request.args.get('q', '')
-
-    if not termino:
-        return jsonify({'error': 'Parámetro q requerido'}), 400
-
-    cursos = Curso.buscar(termino)
-
-    return jsonify({
-        'resultados': [{
-            'codigo': c.codigo,
-            'nombre': c.nombre,
-            'creditos': c.creditos,
-            'semestre': c.semestre,
-            'requisitos': c.requisitos
-        } for c in cursos]
-    })
+    try:
+        termino = request.args.get('q', '')
+        
+        if not termino:
+            return jsonify({'error': 'Parámetro q requerido'}), 400
+        
+        cursos = Curso.buscar(termino)
+        
+        return jsonify({
+            'resultados': [{
+                'codigo': c.codigo,
+                'nombre': c.nombre,
+                'creditos': c.creditos,
+                'semestre': c.semestre,
+                'requisitos': c.requisitos
+            } for c in cursos]
+        })
+    except Exception as e:
+        logger.error(f"Error buscando cursos: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # ========== ENDPOINTS DE USUARIO ==========
@@ -529,20 +557,7 @@ def buscar_cursos():
 @app.route('/api/usuario/perfil', methods=['GET'])
 @token_requerido
 def obtener_perfil(usuario):
-    """
-    Obtiene el perfil completo del usuario autenticado.
-    
-    Incluye:
-    - Datos personales
-    - Estadísticas académicas
-    - Configuración de estudio
-    
-    Args:
-        usuario: Usuario autenticado (inyectado por decorador)
-    
-    Returns:
-        JSON con datos completos del perfil
-    """
+    """Obtiene el perfil completo del usuario autenticado."""
     try:
         stats = usuario.obtener_estadisticas()
         
@@ -556,10 +571,10 @@ def obtener_perfil(usuario):
         config_estudio = {
             'tipo_estudio': usuario.tipo_estudio,
             'horas_diarias': horas_dict.get(usuario.tipo_estudio, 4),
-            'dias_semana': [1, 2, 3, 4, 5],  # Lun-Vie
+            'dias_semana': [1, 2, 3, 4, 5],
             'hora_inicio': '08:00',
             'hora_fin': '22:00',
-            'descansos': 15  # minutos
+            'descansos': 15
         }
         
         return jsonify({
@@ -578,10 +593,13 @@ def obtener_perfil(usuario):
         }), 200
         
     except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/usuario/perfil',
-            'usuario_id': usuario.id
-        })
+        if LOGGER_AVAILABLE:
+            log_error_with_context(logger, e, {
+                'endpoint': '/api/usuario/perfil',
+                'usuario_id': usuario.id
+            })
+        else:
+            logger.error(f"Error en perfil: {e}")
         return jsonify({
             'error': 'Error obteniendo perfil',
             'codigo': 'PERFIL_ERROR'
@@ -591,208 +609,476 @@ def obtener_perfil(usuario):
 @token_requerido
 def obtener_materias_actuales(usuario):
     """GET /api/usuario/materias/actuales"""
-    materias = usuario.obtener_materias_actuales()
-
-    return jsonify({
-        'materias': [{
-            'codigo': m.codigo,
-            'nombre': m.nombre,
-            'creditos': m.creditos,
-            'semestre': m.semestre,
-            'requisitos': m.requisitos
-        } for m in materias]
-    })
+    try:
+        materias = usuario.obtener_materias_actuales()
+        
+        return jsonify({
+            'materias': [{
+                'codigo': m.codigo,
+                'nombre': m.nombre,
+                'creditos': m.creditos,
+                'semestre': m.semestre,
+                'requisitos': m.requisitos
+            } for m in materias]
+        })
+    except Exception as e:
+        logger.error(f"Error obteniendo materias actuales: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/usuario/materias/aprobadas', methods=['GET'])
 @token_requerido
 def obtener_materias_aprobadas(usuario):
     """GET /api/usuario/materias/aprobadas"""
-    materias = usuario.obtener_materias_aprobadas()
-
-    return jsonify({
-        'materias': [{
-            'codigo': m.codigo,
-            'nombre': m.nombre,
-            'creditos': m.creditos,
-            'semestre': m.semestre
-        } for m in materias]
-    })
+    try:
+        materias = usuario.obtener_materias_aprobadas()
+        
+        return jsonify({
+            'materias': [{
+                'codigo': m.codigo,
+                'nombre': m.nombre,
+                'creditos': m.creditos,
+                'semestre': m.semestre
+            } for m in materias]
+        })
+    except Exception as e:
+        logger.error(f"Error obteniendo materias aprobadas: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/usuario/materias/inscribir', methods=['POST'])
 @token_requerido
 def inscribir_materia(usuario):
     """POST /api/usuario/materias/inscribir"""
-    data = request.get_json()
-    codigo = data.get('codigo_materia')
-
-    if not codigo:
-        return jsonify({'error': 'codigo_materia requerido'}), 400
-
     try:
+        data = request.get_json()
+        codigo = data.get('codigo_materia')
+        
+        if not codigo:
+            return jsonify({'error': 'codigo_materia requerido'}), 400
+        
         usuario.inscribir_materia(codigo)
         return jsonify({'success': True, 'mensaje': 'Materia inscrita'}), 200
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error inscribiendo materia: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/usuario/materias/cancelar', methods=['POST'])
 @token_requerido
 def cancelar_materia(usuario):
     """POST /api/usuario/materias/cancelar"""
-    data = request.get_json()
-    codigo = data.get('codigo_materia')
-
-    if not codigo:
-        return jsonify({'error': 'codigo_materia requerido'}), 400
-
-    if usuario.cancelar_materia(codigo):
-        return jsonify({'success': True, 'mensaje': 'Materia cancelada'}), 200
-    else:
-        return jsonify({'error': 'No se pudo cancelar la materia'}), 400
-
-# ========== ENDPOINTS DE NOTIFICACIONES ==========
-
-@app.route('/api/notificaciones', methods=['GET'])
-@token_requerido
-def obtener_notificaciones(usuario):
-    """
-    Obtiene todas las notificaciones del usuario.
-    
-    Query Parameters:
-        solo_no_leidas (bool): Si es true, solo retorna notificaciones no leídas
-        limite (int): Número máximo de notificaciones (default: 20)
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con lista de notificaciones
-    
-    Example:
-        GET /api/notificaciones?solo_no_leidas=true&limite=10
-    """
     try:
-        solo_no_leidas = request.args.get('solo_no_leidas', 'false').lower() == 'true'
-        limite = request.args.get('limite', 20, type=int)
+        data = request.get_json()
+        codigo = data.get('codigo_materia')
         
-        # Generar notificaciones
-        notificaciones = gestor_notificaciones.generar_notificaciones_usuario(usuario)
+        if not codigo:
+            return jsonify({'error': 'codigo_materia requerido'}), 400
         
-        # Filtrar si es necesario
-        if solo_no_leidas:
-            notificaciones = [n for n in notificaciones if not n.leida]
+        if usuario.cancelar_materia(codigo):
+            return jsonify({'success': True, 'mensaje': 'Materia cancelada'}), 200
+        else:
+            return jsonify({'error': 'No se pudo cancelar la materia'}), 400
+    except Exception as e:
+        logger.error(f"Error cancelando materia: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ========== ENDPOINTS DE TAREAS ==========
+
+@app.route('/api/tareas', methods=['GET'])
+@token_requerido
+def obtener_tareas(usuario):
+    """GET /api/tareas?pendientes=true"""
+    try:
+        solo_pendientes = request.args.get('pendientes', 'false').lower() == 'true'
         
-        # Limitar cantidad
-        notificaciones = notificaciones[:limite]
+        tareas = usuario.obtener_tareas(solo_pendientes=solo_pendientes)
         
         return jsonify({
-            'notificaciones': [n.to_dict() for n in notificaciones],
-            'total': len(notificaciones)
-        }), 200
-        
-    except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/notificaciones',
-            'usuario_id': usuario.id
+            'tareas': [{
+                'id': t.id,
+                'titulo': t.titulo,
+                'descripcion': t.descripcion,
+                'tipo': t.tipo,
+                'curso': {
+                    'codigo': t.curso.codigo,
+                    'nombre': t.curso.nombre,
+                    'creditos': t.curso.creditos
+                },
+                'fecha_limite': t.fecha_limite.isoformat(),
+                'hora_limite': '23:59',
+                'horas_estimadas': t.horas_estimadas,
+                'dificultad': t.dificultad,
+                'prioridad': t.prioridad,
+                'completada': t.completada,
+                'porcentaje_completado': t.porcentaje_completado,
+                'dias_restantes': t.dias_restantes()
+            } for t in tareas]
         })
-        return jsonify({
-            'error': 'Error obteniendo notificaciones',
-            'codigo': 'NOTIFICACIONES_ERROR'
-        }), 500
-
-
-@app.route('/api/notificaciones/no-leidas/contar', methods=['GET'])
-@token_requerido
-def contar_no_leidas(usuario):
-    """
-    Cuenta notificaciones no leídas (para badge).
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con conteo de notificaciones no leídas
-    
-    Example:
-        GET /api/notificaciones/no-leidas/contar
-        
-        Response:
-        {
-            "no_leidas": 5,
-            "criticas": 2
-        }
-    """
-    try:
-        notificaciones = gestor_notificaciones.generar_notificaciones_usuario(usuario)
-        
-        no_leidas = [n for n in notificaciones if not n.leida]
-        criticas = [n for n in no_leidas if n.prioridad.value == 'critica']
-        
-        return jsonify({
-            'no_leidas': len(no_leidas),
-            'criticas': len(criticas)
-        }), 200
-        
     except Exception as e:
-        logger.error(f"Error contando notificaciones: {e}")
-        return jsonify({'no_leidas': 0, 'criticas': 0}), 200
+        logger.error(f"Error obteniendo tareas: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/notificaciones/<notif_id>/marcar-leida', methods=['POST'])
+@app.route('/api/tareas', methods=['POST'])
 @token_requerido
-def marcar_notificacion_leida(usuario, notif_id):
-    """
-    Marca una notificación como leída.
-    
-    Args:
-        usuario: Usuario autenticado
-        notif_id: ID de la notificación
-    
-    Returns:
-        JSON confirmando la operación
-    """
+def crear_tarea(usuario):
+    """POST /api/tareas"""
     try:
-        # En producción, esto debería guardarse en base de datos
-        # Por ahora solo retornamos éxito
+        data = request.get_json()
+        
+        # Validar datos si el validador está disponible
+        if VALIDATORS_AVAILABLE:
+            es_valido, mensaje_error = validar_datos_tarea(data)
+            if not es_valido:
+                return jsonify({'error': mensaje_error}), 400
+        else:
+            # Validación básica
+            campos_requeridos = ['curso_codigo', 'titulo', 'tipo', 'fecha_limite']
+            for campo in campos_requeridos:
+                if campo not in data:
+                    return jsonify({'error': f'Campo requerido: {campo}'}), 400
+
+        horas_estimadas = data.get('horas_estimadas', 4)
+        dificultad = data.get('dificultad', 3)
+
+        try:
+            horas_estimadas = float(horas_estimadas)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'horas_estimadas debe ser un numero'}), 400
+
+        try:
+            dificultad = int(dificultad)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'dificultad debe ser un numero'}), 400
+
+        if dificultad < 1 or dificultad > 5:
+            return jsonify({'error': 'dificultad debe estar entre 1 y 5'}), 400
+
+        tarea = usuario.agregar_tarea(
+            curso_codigo=data['curso_codigo'],
+            titulo=data['titulo'],
+            tipo=data['tipo'],
+            fecha_limite=data['fecha_limite'],
+            descripcion=data.get('descripcion', ''),
+            horas_estimadas=horas_estimadas,
+            dificultad=dificultad
+        )
         
         return jsonify({
             'success': True,
-            'mensaje': 'Notificación marcada como leída'
-        }), 200
+            'tarea': {
+                'id': tarea.id,
+                'titulo': tarea.titulo,
+                'curso': tarea.curso.nombre
+            }
+        }), 201
         
     except Exception as e:
-        logger.error(f"Error marcando notificación: {e}")
+        logger.error(f"Error creando tarea: {e}")
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/tareas/<int:tarea_id>', methods=['DELETE'])
+@token_requerido
+def eliminar_tarea(usuario, tarea_id):
+    """DELETE /api/tareas/{id}"""
+    try:
+        tarea = Tarea.obtener_por_id(tarea_id)
+        
+        if not tarea or tarea.usuario_id != usuario.id:
+            return jsonify({'error': 'Tarea no encontrada'}), 404
+        
+        tarea.eliminar()
+        return jsonify({'success': True, 'mensaje': 'Tarea eliminada'}), 200
+    except Exception as e:
+        logger.error(f"Error eliminando tarea: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tareas/<int:tarea_id>/completar', methods=['POST'])
+@token_requerido
+def completar_tarea(usuario, tarea_id):
+    """POST /api/tareas/{id}/completar"""
+    try:
+        tarea = Tarea.obtener_por_id(tarea_id)
+        
+        if not tarea or tarea.usuario_id != usuario.id:
+            return jsonify({'error': 'Tarea no encontrada'}), 404
+        
+        tarea.marcar_completada()
+        return jsonify({'success': True, 'mensaje': 'Tarea completada'}), 200
+    except Exception as e:
+        logger.error(f"Error completando tarea: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tareas/<int:tarea_id>/progreso', methods=['POST'])
+@token_requerido
+def actualizar_progreso(usuario, tarea_id):
+    """POST /api/tareas/{id}/progreso"""
+    try:
+        tarea = Tarea.obtener_por_id(tarea_id)
+        
+        if not tarea or tarea.usuario_id != usuario.id:
+            return jsonify({'error': 'Tarea no encontrada'}), 404
+        
+        data = request.get_json()
+        porcentaje = data.get('porcentaje')
+        
+        if porcentaje is None:
+            return jsonify({'error': 'porcentaje requerido'}), 400
+        
+        tarea.actualizar_progreso(int(porcentaje))
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        logger.error(f"Error actualizando progreso: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== ENDPOINTS DE RECOMENDACIONES ==========
+
+@app.route('/api/recomendaciones', methods=['GET'])
+@token_requerido
+def obtener_recomendaciones(usuario):
+    """GET /api/recomendaciones?limite=5"""
+    try:
+        limite = request.args.get('limite', 5, type=int)
+        
+        tareas = usuario.obtener_tareas(solo_pendientes=True)
+        
+        # Si está disponible el módulo de recomendaciones, usarlo
+        if RECOMMENDATIONS_AVAILABLE:
+            tareas_recomendadas = generar_recomendaciones(tareas, limite=limite)
+        else:
+            # Fallback: ordenar por fecha
+            tareas_recomendadas = sorted(tareas, key=lambda t: t.fecha_limite)[:limite]
+        
         return jsonify({
-            'error': 'Error al marcar notificación',
-            'codigo': 'MARCAR_ERROR'
-        }), 500
+            'recomendaciones': [{
+                'id': t.id,
+                'titulo': t.titulo,
+                'curso': t.curso.nombre,
+                'fecha_limite': t.fecha_limite.isoformat(),
+                'dias_restantes': t.dias_restantes(),
+                'horas_estimadas': t.horas_estimadas,
+                'dificultad': t.dificultad
+            } for t in tareas_recomendadas]
+        })
+    except Exception as e:
+        logger.error(f"Error obteniendo recomendaciones: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-# ========== ENDPOINTS DE RECOMENDACIONES AVANZADAS ==========
+@app.route('/api/recomendaciones/tareas-urgentes', methods=['GET'])
+@token_requerido
+def obtener_urgentes(usuario):
+    """GET /api/recomendaciones/tareas-urgentes?dias=3"""
+    try:
+        dias = request.args.get('dias', 3, type=int)
+        
+        tareas = usuario.obtener_tareas(solo_pendientes=True)
+        
+        if RECOMMENDATIONS_AVAILABLE:
+            urgentes = obtener_tareas_urgentes(tareas, dias_umbral=dias)
+        else:
+            urgentes = [t for t in tareas if t.dias_restantes() <= dias]
+        
+        return jsonify({
+            'tareas_urgentes': [{
+                'id': t.id,
+                'titulo': t.titulo,
+                'curso': t.curso.nombre,
+                'fecha_limite': t.fecha_limite.isoformat(),
+                'dias_restantes': t.dias_restantes()
+            } for t in urgentes]
+        })
+    except Exception as e:
+        logger.error(f"Error obteniendo urgentes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/estadisticas', methods=['GET'])
+@token_requerido
+def obtener_estadisticas(usuario):
+    """GET /api/estadisticas"""
+    try:
+        stats = usuario.obtener_estadisticas()
+        stats['horas_pendientes'] = stats['pendientes'] * 4
+        
+        return jsonify({'estadisticas': stats})
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/estadisticas/detalladas', methods=['GET'])
+@token_requerido
+def obtener_estadisticas_detalladas(usuario):
+    """GET /api/estadisticas/detalladas"""
+    try:
+        tareas = usuario.obtener_tareas()
+        tareas_pendientes = [t for t in tareas if not t.completada]
+
+        if RECOMMENDATIONS_AVAILABLE:
+            stats_funcionales = calcular_estadisticas_funcionales(tareas)
+        else:
+            total_tareas = len(tareas)
+            completadas = len([t for t in tareas if t.completada])
+            pendientes = total_tareas - completadas
+            horas_pendientes = sum(
+                (getattr(t, 'horas_estimadas', 0) or 0)
+                for t in tareas_pendientes
+            )
+            if pendientes:
+                dificultad_promedio = sum(
+                    (getattr(t, 'dificultad', 0) or 0)
+                    for t in tareas_pendientes
+                ) / pendientes
+            else:
+                dificultad_promedio = 0
+
+            stats_funcionales = {
+                'total_tareas': total_tareas,
+                'completadas': completadas,
+                'pendientes': pendientes,
+                'horas_pendientes': round(horas_pendientes, 1),
+                'dificultad_promedio': round(dificultad_promedio, 2)
+            }
+
+        total_tareas = stats_funcionales.get('total_tareas', len(tareas))
+        completadas = stats_funcionales.get('completadas', 0)
+        pendientes = stats_funcionales.get('pendientes', 0)
+        horas_pendientes = stats_funcionales.get('horas_pendientes', 0)
+        dificultad_promedio = stats_funcionales.get('dificultad_promedio', 0)
+
+        tasa_completado = round(
+            (completadas / total_tareas) * 100, 1
+        ) if total_tareas else 0
+        racha_dias = min(completadas, 7) if completadas else 0
+
+        distribucion_materia = {}
+        distribucion_tipo = {}
+        for tarea in tareas_pendientes:
+            materia = (
+                tarea.curso.nombre
+                if tarea.curso
+                else (tarea.curso_codigo or 'Sin curso')
+            )
+            horas = getattr(tarea, 'horas_estimadas', 0) or 0
+            distribucion_materia[materia] = round(
+                distribucion_materia.get(materia, 0) + horas, 1
+            )
+
+            tipo = tarea.tipo or 'General'
+            distribucion_tipo[tipo] = round(
+                distribucion_tipo.get(tipo, 0) + horas, 1
+            )
+
+        materias_criticas = []
+        for tarea in tareas_pendientes:
+            try:
+                if tarea.dias_restantes() <= 2:
+                    materia = (
+                        tarea.curso.nombre
+                        if tarea.curso
+                        else (tarea.curso_codigo or 'Sin curso')
+                    )
+                    if materia not in materias_criticas:
+                        materias_criticas.append(materia)
+            except Exception:
+                continue
+
+        if not materias_criticas and distribucion_materia:
+            materias_criticas = [
+                materia for materia, _ in sorted(
+                    distribucion_materia.items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:3]
+            ]
+
+        stats_usuario = usuario.obtener_estadisticas()
+        creditos_aprobados = stats_usuario.get('creditos_aprobados', 0)
+        creditos_actuales = stats_usuario.get('creditos_actuales', 0)
+        total_creditos = 162
+        porcentaje_carrera = round(
+            (creditos_aprobados / total_creditos) * 100, 1
+        ) if total_creditos else 0
+
+        return jsonify({
+            'rendimiento': {
+                'tasa_completado': tasa_completado,
+                'horas_pendientes': horas_pendientes,
+                'racha_dias': racha_dias,
+                'completadas': completadas,
+                'pendientes': pendientes,
+                'dificultad_promedio': dificultad_promedio,
+                'materias_criticas': materias_criticas
+            },
+            'distribucion_tiempo': {
+                'por_materia': distribucion_materia,
+                'por_tipo': distribucion_tipo
+            },
+            'creditos': {
+                'aprobados': creditos_aprobados,
+                'actuales': creditos_actuales,
+                'porcentaje_carrera': porcentaje_carrera
+            }
+        }), 200
+    except Exception as e:
+        logger.error(f"Error obteniendo estadisticas detalladas: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== ENDPOINTS DE CALENDARIO (CORREGIDO) ==========
+
+@app.route('/api/calendario/eventos', methods=['GET'])
+def obtener_eventos_calendario():
+    """GET /api/calendario/eventos?semestre=2025-1"""
+    try:
+        semestre = request.args.get('semestre')
+        
+        if semestre:
+            eventos = CalendarioInstitucional.obtener_por_semestre(semestre)
+        else:
+            eventos = CalendarioInstitucional.obtener_proximos(dias=90)
+        
+        return jsonify({
+            'eventos': [{
+                'id': e.id,
+                'nombre_evento': e.nombre_evento,
+                'descripcion': e.descripcion if hasattr(e, 'descripcion') else '',
+                'fecha_inicio': e.fecha_inicio.isoformat() if hasattr(e.fecha_inicio, 'isoformat') else str(e.fecha_inicio),
+                'fecha_fin': e.fecha_fin.isoformat() if e.fecha_fin and hasattr(e.fecha_fin, 'isoformat') else (str(e.fecha_fin) if e.fecha_fin else None),
+                'tipo': e.tipo,
+                'semestre': e.semestre,
+                'icono': e.icono if hasattr(e, 'icono') else '📅',
+                'color': e.color
+            } for e in eventos]
+        })
+    except Exception as e:
+        logger.error(f"Error obteniendo eventos calendario: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Error obteniendo calendario: {str(e)}'}), 500
+
+
+# ========== ENDPOINTS AVANZADOS (con fallback si módulos no disponibles) ==========
 
 @app.route('/api/recomendaciones/plan-estudio', methods=['GET'])
 @token_requerido
 def obtener_plan_estudio(usuario):
-    """
-    Genera plan de estudio automatizado.
-    
-    Query Parameters:
-        horas_diarias (float): Horas disponibles por día (default: según tipo_estudio)
-        dias (int): Número de días a planificar (default: 7)
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con plan de estudio distribuido por días
-    
-    Example:
-        GET /api/recomendaciones/plan-estudio?horas_diarias=5&dias=7
-    """
+    """Genera plan de estudio automatizado."""
     try:
-        # Obtener parámetros
+        if not RECOMMENDATIONS_AVAILABLE:
+            return jsonify({
+                'error': 'Módulo de recomendaciones no disponible',
+                'codigo': 'MODULE_NOT_AVAILABLE'
+            }), 503
+        
         horas_dict = {
             'intensivo': config.HORAS_ESTUDIO_INTENSIVO,
             'moderado': config.HORAS_ESTUDIO_MODERADO,
@@ -806,17 +1092,10 @@ def obtener_plan_estudio(usuario):
         )
         
         dias = request.args.get('dias', 7, type=int)
-        
-        # Obtener tareas
         tareas = usuario.obtener_tareas(solo_pendientes=True)
-        
-        # Generar plan
         plan = generar_plan_estudio(tareas, horas_diarias)
-        
-        # Limitar a número de días solicitados
         plan = plan[:dias]
         
-        # Formatear respuesta
         plan_formateado = []
         for dia in plan:
             plan_formateado.append({
@@ -843,48 +1122,30 @@ def obtener_plan_estudio(usuario):
         }), 200
         
     except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/recomendaciones/plan-estudio',
-            'usuario_id': usuario.id
-        })
-        return jsonify({
-            'error': 'Error generando plan de estudio',
-            'codigo': 'PLAN_ERROR'
-        }), 500
+        if LOGGER_AVAILABLE:
+            log_error_with_context(logger, e, {
+                'endpoint': '/api/recomendaciones/plan-estudio',
+                'usuario_id': usuario.id
+            })
+        else:
+            logger.error(f"Error generando plan: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/recomendaciones/carga-semanal', methods=['GET'])
 @token_requerido
 def obtener_carga_semanal(usuario):
-    """
-    Calcula carga de trabajo por materia esta semana.
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con horas de estudio por materia
-    
-    Example:
-        Response:
-        {
-            "carga_por_materia": {
-                "Estructura de Datos": 12,
-                "Base de Datos I": 8
-            },
-            "total_horas": 20,
-            "materias_criticas": ["Estructura de Datos"]
-        }
-    """
+    """Calcula carga de trabajo por materia esta semana."""
     try:
+        if not RECOMMENDATIONS_AVAILABLE:
+            return jsonify({
+                'error': 'Módulo de recomendaciones no disponible',
+                'codigo': 'MODULE_NOT_AVAILABLE'
+            }), 503
+        
         tareas = usuario.obtener_tareas(solo_pendientes=True)
-        
-        # Calcular carga usando función funcional
         carga = calcular_carga_semanal(tareas)
-        
         total_horas = sum(carga.values())
-        
-        # Materias con más de 10 horas son críticas
         materias_criticas = [m for m, h in carga.items() if h > 10]
         
         return jsonify({
@@ -899,125 +1160,83 @@ def obtener_carga_semanal(usuario):
         }), 200
         
     except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/recomendaciones/carga-semanal',
-            'usuario_id': usuario.id
-        })
-        return jsonify({
-            'error': 'Error calculando carga semanal',
-            'codigo': 'CARGA_ERROR'
-        }), 500
+        logger.error(f"Error calculando carga: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-# ========== ENDPOINTS DE ESTADÍSTICAS AVANZADAS ==========
-
-@app.route('/api/estadisticas/detalladas', methods=['GET'])
+@app.route('/api/notificaciones', methods=['GET'])
 @token_requerido
-def obtener_estadisticas_detalladas(usuario):
-    """
-    Obtiene estadísticas detalladas del usuario para analytics.
-    
-    Incluye:
-    - Rendimiento general
-    - Distribución de tiempo por materia y tipo
-    - Tendencias semanales
-    - Racha de días activos
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con estadísticas completas
-    """
+def obtener_notificaciones(usuario):
+    """Obtiene todas las notificaciones del usuario."""
     try:
-        tareas = usuario.obtener_tareas()
-        stats_basicas = usuario.obtener_estadisticas()
+        if not NOTIFICATIONS_AVAILABLE:
+            return jsonify({
+                'notificaciones': [],
+                'total': 0,
+                'mensaje': 'Módulo de notificaciones no disponible'
+            }), 200
         
-        # Usar función funcional para stats avanzadas
-        stats_funcionales = calcular_estadisticas_funcionales(tareas)
+        solo_no_leidas = request.args.get('solo_no_leidas', 'false').lower() == 'true'
+        limite = request.args.get('limite', 20, type=int)
         
-        # Calcular tasa de completado
-        tasa_completado = (
-            (stats_basicas['completadas'] / stats_basicas['total_tareas'] * 100)
-            if stats_basicas['total_tareas'] > 0 else 0
-        )
+        notificaciones = gestor_notificaciones.generar_notificaciones_usuario(usuario)
         
-        # Calcular distribución por materia
-        carga = calcular_carga_semanal(tareas)
+        if solo_no_leidas:
+            notificaciones = [n for n in notificaciones if not n.leida]
         
-        # Distribución por tipo de tarea
-        tareas_por_tipo = {}
-        for tarea in tareas:
-            tareas_por_tipo[tarea.tipo] = tareas_por_tipo.get(tarea.tipo, 0) + 1
-        
-        # Calcular racha (simulado - en producción usar tabla de actividad)
-        racha_dias = 7  # Placeholder
-        
-        # Materias más críticas (más horas pendientes)
-        materias_criticas = sorted(
-            carga.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )[:3]
+        notificaciones = notificaciones[:limite]
         
         return jsonify({
-            'rendimiento': {
-                'tasa_completado': round(tasa_completado, 1),
-                'total_tareas': stats_basicas['total_tareas'],
-                'completadas': stats_basicas['completadas'],
-                'pendientes': stats_basicas['pendientes'],
-                'horas_pendientes': stats_funcionales['horas_pendientes'],
-                'dificultad_promedio': stats_funcionales['dificultad_promedio'],
-                'materias_criticas': [m[0] for m in materias_criticas],
-                'racha_dias': racha_dias
-            },
-            'distribucion_tiempo': {
-                'por_materia': dict(list(carga.items())[:5]),  # Top 5
-                'por_tipo': tareas_por_tipo
-            },
-            'creditos': {
-                'actuales': stats_basicas['creditos_actuales'],
-                'aprobados': stats_basicas['creditos_aprobados'],
-                'porcentaje_carrera': round(
-                    stats_basicas['creditos_aprobados'] / 162 * 100, 1
-                )  # 162 créditos totales de Sistemas
-            },
-            'tendencias': {
-                # Simular tendencia semanal (en producción usar tabla histórica)
-                'ultima_semana': [5, 8, 6, 9, 7, 10, 8],
-                'mes_actual': stats_basicas['completadas']
-            }
+            'notificaciones': [n.to_dict() for n in notificaciones],
+            'total': len(notificaciones)
         }), 200
         
     except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/estadisticas/detalladas',
-            'usuario_id': usuario.id
-        })
+        logger.error(f"Error obteniendo notificaciones: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/notificaciones/<notif_id>/marcar-leida', methods=['POST'])
+@token_requerido
+def marcar_notificacion_leida(usuario, notif_id):
+    """Marca una notificacion como leida (sin persistencia)."""
+    try:
         return jsonify({
-            'error': 'Error obteniendo estadísticas',
-            'codigo': 'STATS_ERROR'
-        }), 500
+            'success': True,
+            'id': notif_id
+        }), 200
+    except Exception as e:
+        logger.error(f"Error marcando notificacion: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-# ========== ENDPOINTS DE LOGROS (GAMIFICACIÓN) ==========
+@app.route('/api/notificaciones/no-leidas/contar', methods=['GET'])
+@token_requerido
+def contar_notificaciones_no_leidas(usuario):
+    """Cuenta notificaciones no leidas del usuario."""
+    try:
+        if not NOTIFICATIONS_AVAILABLE:
+            return jsonify({
+                'no_leidas': 0,
+                'mensaje': 'Modulo de notificaciones no disponible'
+            }), 200
+
+        notificaciones = gestor_notificaciones.generar_notificaciones_usuario(usuario)
+        no_leidas = len([n for n in notificaciones if not n.leida])
+
+        return jsonify({'no_leidas': no_leidas}), 200
+    except Exception as e:
+        logger.error(f"Error contando notificaciones: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/logros', methods=['GET'])
 @token_requerido
 def obtener_logros(usuario):
-    """
-    Obtiene logros desbloqueados y progreso del usuario.
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con logros y progreso de nivel
-    """
+    """Obtiene logros desbloqueados y progreso del usuario."""
     try:
         stats = usuario.obtener_estadisticas()
         
-        # Definir logros disponibles
         logros_disponibles = [
             {
                 'id': 'primera_tarea',
@@ -1039,24 +1258,9 @@ def obtener_logros(usuario):
                 'descripcion': 'Completaste 50 tareas',
                 'emoji': '🚀',
                 'requisito': lambda s: s['completadas'] >= 50
-            },
-            {
-                'id': 'racha_7_dias',
-                'nombre': 'Racha de Fuego',
-                'descripcion': '7 días consecutivos',
-                'emoji': '🔥',
-                'requisito': lambda s: True  # Placeholder
-            },
-            {
-                'id': 'sin_atrasos',
-                'nombre': 'Maestro del Tiempo',
-                'descripcion': 'Sin tareas atrasadas',
-                'emoji': '👑',
-                'requisito': lambda s: s['pendientes'] == 0 or True  # Simplificado
             }
         ]
         
-        # Verificar logros desbloqueados
         logros_desbloqueados = []
         for logro in logros_disponibles:
             if logro['requisito'](stats):
@@ -1065,18 +1269,19 @@ def obtener_logros(usuario):
                     'nombre': logro['nombre'],
                     'descripcion': logro['descripcion'],
                     'emoji': logro['emoji'],
-                    'fecha_obtenido': datetime.now().isoformat()  # Placeholder
+                    'fecha_obtenido': datetime.now().isoformat()
                 })
         
-        # Calcular nivel y experiencia
-        exp_total = (
-            stats['completadas'] * 10 +  # 10 XP por tarea
-            stats['creditos_aprobados'] * 20  # 20 XP por crédito
-        )
-        
-        nivel_actual = exp_total // 100  # Cada 100 XP = 1 nivel
+        exp_total = stats['completadas'] * 10 + stats['creditos_aprobados'] * 20
+        nivel_actual = exp_total // 100
         exp_actual = exp_total % 100
         exp_siguiente = 100
+
+        estadisticas_generales = {
+            'tareas_completadas': stats.get('completadas', 0),
+            'creditos_aprobados': stats.get('creditos_aprobados', 0),
+            'materias_cursando': stats.get('materias_actuales', 0)
+        }
         
         return jsonify({
             'logros_desbloqueados': logros_desbloqueados,
@@ -1090,198 +1295,26 @@ def obtener_logros(usuario):
                 'exp_siguiente_nivel': exp_siguiente,
                 'porcentaje': round(exp_actual / exp_siguiente * 100, 1)
             },
-            'estadisticas_generales': {
-                'tareas_completadas': stats['completadas'],
-                'creditos_aprobados': stats['creditos_aprobados'],
-                'materias_cursando': stats['materias_actuales']
-            }
+            'estadisticas_generales': estadisticas_generales
         }), 200
         
     except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/logros',
-            'usuario_id': usuario.id
-        })
-        return jsonify({
-            'error': 'Error obteniendo logros',
-            'codigo': 'LOGROS_ERROR'
-        }), 500
+        logger.error(f"Error obteniendo logros: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-# ========== ENDPOINT DE BÚSQUEDA AVANZADA ==========
+# ========== ERROR HANDLERS ==========
 
-@app.route('/api/tareas/buscar', methods=['GET'])
-@token_requerido
-def buscar_tareas(usuario):
-    """
-    Búsqueda avanzada de tareas con filtros múltiples.
-    
-    Query Parameters:
-        q (str): Término de búsqueda
-        curso (str): Filtrar por código de curso
-        tipo (str): Filtrar por tipo de tarea
-        estado (str): 'pendiente', 'completada', 'urgente'
-        fecha_desde (str): Fecha mínima (YYYY-MM-DD)
-        fecha_hasta (str): Fecha máxima (YYYY-MM-DD)
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con tareas que coinciden con los filtros
-    
-    Example:
-        GET /api/tareas/buscar?q=parcial&tipo=parcial&estado=pendiente
-    """
-    try:
-        # Obtener parámetros de búsqueda
-        termino = request.args.get('q', '').lower()
-        curso_filtro = request.args.get('curso', '').upper()
-        tipo_filtro = request.args.get('tipo', '').lower()
-        estado_filtro = request.args.get('estado', '').lower()
-        fecha_desde = request.args.get('fecha_desde')
-        fecha_hasta = request.args.get('fecha_hasta')
-        
-        # Obtener todas las tareas del usuario
-        tareas = usuario.obtener_tareas(
-            solo_pendientes=(estado_filtro == 'pendiente')
-        )
-        
-        # Aplicar filtros
-        resultados = []
-        for tarea in tareas:
-            # Filtro por término de búsqueda
-            if termino and termino not in tarea.titulo.lower():
-                continue
-            
-            # Filtro por curso
-            if curso_filtro and tarea.curso_codigo != curso_filtro:
-                continue
-            
-            # Filtro por tipo
-            if tipo_filtro and tarea.tipo.lower() != tipo_filtro:
-                continue
-            
-            # Filtro por estado
-            if estado_filtro == 'completada' and not tarea.completada:
-                continue
-            elif estado_filtro == 'urgente' and tarea.dias_restantes() > 3:
-                continue
-            
-            # Filtro por fechas
-            if fecha_desde:
-                fecha_min = datetime.strptime(fecha_desde, '%Y-%m-%d')
-                if tarea.fecha_limite < fecha_min:
-                    continue
-            
-            if fecha_hasta:
-                fecha_max = datetime.strptime(fecha_hasta, '%Y-%m-%d')
-                if tarea.fecha_limite > fecha_max:
-                    continue
-            
-            # Agregar a resultados
-            resultados.append({
-                'id': tarea.id,
-                'titulo': tarea.titulo,
-                'descripcion': tarea.descripcion,
-                'tipo': tarea.tipo,
-                'curso': {
-                    'codigo': tarea.curso.codigo,
-                    'nombre': tarea.curso.nombre
-                },
-                'fecha_limite': tarea.fecha_limite.isoformat(),
-                'dias_restantes': tarea.dias_restantes(),
-                'completada': tarea.completada
-            })
-        
-        return jsonify({
-            'resultados': resultados,
-            'total': len(resultados),
-            'filtros_aplicados': {
-                'termino': termino or None,
-                'curso': curso_filtro or None,
-                'tipo': tipo_filtro or None,
-                'estado': estado_filtro or None
-            }
-        }), 200
-        
-    except Exception as e:
-        log_error_with_context(logger, e, {
-            'endpoint': '/api/tareas/buscar',
-            'usuario_id': usuario.id
-        })
-        return jsonify({
-            'error': 'Error en búsqueda de tareas',
-            'codigo': 'BUSQUEDA_ERROR'
-        }), 500
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint no encontrado'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Error interno del servidor'}), 500
 
 
-# ========== ENDPOINT DE CONFIGURACIÓN DE USUARIO ==========
-
-@app.route('/api/usuario/configuracion', methods=['GET', 'PUT'])
-@token_requerido
-def gestionar_configuracion(usuario):
-    """
-    Obtiene o actualiza configuración del usuario.
-    
-    GET: Retorna configuración actual
-    PUT: Actualiza configuración
-    
-    Request Body (PUT):
-        {
-            "tipo_estudio": "intensivo",
-            "notificaciones_email": true,
-            "notificaciones_push": true,
-            "hora_recordatorio": "09:00"
-        }
-    
-    Args:
-        usuario: Usuario autenticado
-    
-    Returns:
-        JSON con configuración del usuario
-    """
-    if request.method == 'GET':
-        # Obtener configuración actual
-        horas_dict = {
-            'intensivo': config.HORAS_ESTUDIO_INTENSIVO,
-            'moderado': config.HORAS_ESTUDIO_MODERADO,
-            'leve': config.HORAS_ESTUDIO_LEVE
-        }
-        
-        return jsonify({
-            'tipo_estudio': usuario.tipo_estudio,
-            'horas_diarias_sugeridas': horas_dict.get(usuario.tipo_estudio, 4),
-            'notificaciones_email': True,  # Placeholder
-            'notificaciones_push': True,
-            'hora_recordatorio': '09:00'
-        }), 200
-    
-    else:  # PUT
-        try:
-            data = request.get_json()
-            
-            # Actualizar tipo de estudio si se proporciona
-            if 'tipo_estudio' in data:
-                nuevo_tipo = data['tipo_estudio']
-                if nuevo_tipo in ['intensivo', 'moderado', 'leve']:
-                    # Actualizar en base de datos (implementar)
-                    pass
-            
-            return jsonify({
-                'success': True,
-                'mensaje': 'Configuración actualizada'
-            }), 200
-            
-        except Exception as e:
-            log_error_with_context(logger, e, {
-                'endpoint': '/api/usuario/configuracion',
-                'usuario_id': usuario.id
-            })
-            return jsonify({
-                'error': 'Error actualizando configuración',
-                'codigo': 'CONFIG_ERROR'
-            }), 500
+# ========== MAIN ==========
 
 if __name__ == '__main__':
     print("=" * 70)
@@ -1289,13 +1322,13 @@ if __name__ == '__main__':
     print("=" * 70)
     print(f"📍 Servidor: http://localhost:5000")
     print(f"🔧 Ambiente: {os.environ.get('FLASK_ENV', 'development')}")
-    print(f"📊 Log Level: {os.environ.get('LOG_LEVEL', 'INFO')}")
+    print(f"📦 Módulos cargados:")
+    print(f"   - Config: {'✅' if CONFIG_AVAILABLE else '❌'}")
+    print(f"   - Logger: {'✅' if LOGGER_AVAILABLE else '❌'}")
+    print(f"   - Validators: {'✅' if VALIDATORS_AVAILABLE else '❌'}")
+    print(f"   - Recommendations: {'✅' if RECOMMENDATIONS_AVAILABLE else '❌'}")
+    print(f"   - Notifications: {'✅' if NOTIFICATIONS_AVAILABLE else '❌'}")
     print("=" * 70)
     print()
     
-    # Iniciar servidor Flask
-    app.run(
-        debug=True,           # Modo debug para desarrollo
-        host='0.0.0.0',       # Accesible desde todas las interfaces
-        port=5000             # Puerto 5000
-    )
+    app.run(debug=True, host='0.0.0.0', port=5000)

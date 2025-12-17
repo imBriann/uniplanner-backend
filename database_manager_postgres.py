@@ -114,9 +114,20 @@ class DatabaseManager:
             tipo VARCHAR(50) NOT NULL,
             fecha_limite TIMESTAMP NOT NULL,
             completada BOOLEAN DEFAULT FALSE,
+            horas_estimadas DECIMAL(5,2) DEFAULT 4,
+            dificultad INTEGER DEFAULT 3,
+            porcentaje_completado INTEGER DEFAULT 0,
             fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+
+        # Asegurar nuevas columnas en bases existentes
+        cursor.execute('ALTER TABLE tareas ADD COLUMN IF NOT EXISTS horas_estimadas DECIMAL(5,2) DEFAULT 4')
+        cursor.execute('ALTER TABLE tareas ADD COLUMN IF NOT EXISTS dificultad INTEGER DEFAULT 3')
+        cursor.execute('ALTER TABLE tareas ADD COLUMN IF NOT EXISTS porcentaje_completado INTEGER DEFAULT 0')
+        cursor.execute('UPDATE tareas SET horas_estimadas = 4 WHERE horas_estimadas IS NULL')
+        cursor.execute('UPDATE tareas SET dificultad = 3 WHERE dificultad IS NULL')
+        cursor.execute('UPDATE tareas SET porcentaje_completado = 0 WHERE porcentaje_completado IS NULL')
         
         # Tabla calendario_institucional
         cursor.execute('''

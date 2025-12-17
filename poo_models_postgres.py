@@ -285,7 +285,9 @@ class Usuario(DatabaseModel):
             titulo=titulo,
             descripcion=descripcion,
             tipo=tipo,
-            fecha_limite=fecha_limite
+            fecha_limite=fecha_limite,
+            horas_estimadas=horas_estimadas,
+            dificultad=dificultad
         )
     
     def obtener_estadisticas(self) -> Dict:
@@ -406,7 +408,9 @@ class Tarea(DatabaseModel):
     
     def __init__(self, id: int, usuario_id: int, curso_codigo: str,
                  titulo: str, descripcion: str, tipo: str,
-                 fecha_limite: datetime, completada: bool):
+                 fecha_limite: datetime, completada: bool,
+                 horas_estimadas: float = 4, dificultad: int = 3,
+                 porcentaje_completado: int = 0):
         self.id = id
         self.usuario_id = usuario_id
         self.curso_codigo = curso_codigo
@@ -418,11 +422,19 @@ class Tarea(DatabaseModel):
         
         self.curso = Curso.obtener_por_codigo(curso_codigo)
         
-        # Atributos ficticios para compatibilidad
-        self.horas_estimadas = 4
-        self.dificultad = 3
+        try:
+            self.horas_estimadas = float(horas_estimadas) if horas_estimadas is not None else 4
+        except (TypeError, ValueError):
+            self.horas_estimadas = 4
+        try:
+            self.dificultad = int(dificultad) if dificultad is not None else 3
+        except (TypeError, ValueError):
+            self.dificultad = 3
         self.prioridad = 0
-        self.porcentaje_completado = 100 if completada else 0
+        if porcentaje_completado is None:
+            self.porcentaje_completado = 100 if completada else 0
+        else:
+            self.porcentaje_completado = int(porcentaje_completado)
     
     @classmethod
     def from_row(cls, row) -> 'Tarea':
@@ -434,12 +446,16 @@ class Tarea(DatabaseModel):
             descripcion=row['descripcion'] or "",
             tipo=row['tipo'],
             fecha_limite=row['fecha_limite'],
-            completada=bool(row['completada'])
+            completada=bool(row['completada']),
+            horas_estimadas=row.get('horas_estimadas', 4),
+            dificultad=row.get('dificultad', 3),
+            porcentaje_completado=row.get('porcentaje_completado')
         )
     
     @classmethod
     def crear(cls, usuario_id: int, curso_codigo: str, titulo: str,
-              descripcion: str, tipo: str, fecha_limite: str) -> 'Tarea':
+              descripcion: str, tipo: str, fecha_limite: str,
+              horas_estimadas: float = 4, dificultad: int = 3) -> 'Tarea':
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -449,10 +465,10 @@ class Tarea(DatabaseModel):
             
             cursor.execute('''
             INSERT INTO tareas 
-            (usuario_id, curso_codigo, titulo, descripcion, tipo, fecha_limite)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (usuario_id, curso_codigo, titulo, descripcion, tipo, fecha_limite, horas_estimadas, dificultad)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-            ''', (usuario_id, curso_codigo, titulo, descripcion, tipo, fecha_limite))
+            ''', (usuario_id, curso_codigo, titulo, descripcion, tipo, fecha_limite, horas_estimadas, dificultad))
             
             tarea_id = cursor.fetchone()['id']
             conn.commit()
@@ -479,15 +495,30 @@ class Tarea(DatabaseModel):
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        cursor.execute('UPDATE tareas SET completada = TRUE WHERE id = %s', (self.id,))
+        cursor.execute(
+            'UPDATE tareas SET completada = TRUE, porcentaje_completado = %s WHERE id = %s',
+            (porcentaje, self.id)
+        )
         conn.commit()
         conn.close()
         
         self.completada = True
+        self.porcentaje_completado = porcentaje
     
     def actualizar_progreso(self, porcentaje: int):
-        """Método dummy para compatibilidad"""
-        pass
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        completada = porcentaje >= 100
+        cursor.execute(
+            'UPDATE tareas SET porcentaje_completado = %s, completada = %s WHERE id = %s',
+            (porcentaje, completada, self.id)
+        )
+        conn.commit()
+        conn.close()
+
+        self.porcentaje_completado = porcentaje
+        self.completada = completada
     
     def eliminar(self):
         conn = self.get_connection()

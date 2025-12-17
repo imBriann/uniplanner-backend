@@ -306,8 +306,8 @@ def validar_datos_tarea(data: dict) -> Tuple[bool, Optional[str]]:
         return False, error
     
     # Validar tipo de tarea
-    tipos_validos = ['parcial', 'final', 'proyecto', 'taller', 
-                     'exposicion', 'lectura', 'laboratorio']
+    tipos_validos = ['parcial', 'final', 'proyecto', 'taller',
+                     'exposicion', 'lectura', 'laboratorio', 'quiz']
     valido, error = validar_opcion(data['tipo'], tipos_validos, 'tipo')
     if not valido:
         return False, error
@@ -317,6 +317,24 @@ def validar_datos_tarea(data: dict) -> Tuple[bool, Optional[str]]:
     if not valido:
         return False, error
     
+    # Validar horas estimadas (opcional)
+    if 'horas_estimadas' in data and data['horas_estimadas'] is not None:
+        try:
+            horas = float(data['horas_estimadas'])
+        except (TypeError, ValueError):
+            return False, "horas_estimadas debe ser un numero"
+        if horas < 0.5 or horas > 24:
+            return False, "horas_estimadas debe estar entre 0.5 y 24"
+
+    # Validar dificultad (opcional)
+    if 'dificultad' in data and data['dificultad'] is not None:
+        try:
+            dificultad = int(data['dificultad'])
+        except (TypeError, ValueError):
+            return False, "dificultad debe ser un numero"
+        if dificultad < 1 or dificultad > 5:
+            return False, "dificultad debe estar entre 1 y 5"
+
     return True, None
 
 
