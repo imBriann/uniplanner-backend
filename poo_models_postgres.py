@@ -28,15 +28,18 @@ class DatabaseModel:
     
     @staticmethod
     def encriptar_password(password: str) -> str:
+        """Genera un hash SHA-256 de la contrasena."""
         return hashlib.sha256(password.encode()).hexdigest()
 
 
 # ========== USUARIO ==========
 
 class Usuario(DatabaseModel):
+    """Modelo de usuario y operaciones asociadas."""
     
     def __init__(self, id=None, nombre=None, apellido=None, email=None,
                  carrera=None, semestre_actual=None, tipo_estudio=None):
+        """Inicializa un usuario con datos basicos."""
         self.id = id
         self.nombre = nombre
         self.apellido = apellido
@@ -47,6 +50,7 @@ class Usuario(DatabaseModel):
     
     @property
     def nombre_completo(self):
+        """Retorna el nombre completo en formato 'Nombre Apellido'."""
         return f"{self.nombre} {self.apellido}"
     
     @classmethod
@@ -54,6 +58,7 @@ class Usuario(DatabaseModel):
               semestre_actual: int, tipo_estudio: str,
               materias_aprobadas: List[str] = None,
               materias_cursando: List[str] = None) -> 'Usuario':
+        """Crea un usuario y registra materias aprobadas y en curso."""
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -322,6 +327,7 @@ class Curso(DatabaseModel):
     def __init__(self, codigo: str, nombre: str, creditos: int,
                  semestre: int, ht: int = 0, hp: int = 0,
                  requisitos: List[str] = None, creditos_requisitos: int = 0):
+        """Inicializa un curso con datos del pensum."""
         self.codigo = codigo
         self.nombre = nombre
         self.creditos = creditos
@@ -334,6 +340,7 @@ class Curso(DatabaseModel):
     
     @classmethod
     def from_row(cls, row) -> 'Curso':
+        """Construye un Curso desde una fila de la base de datos."""
         requisitos = row['requisitos'] if isinstance(row['requisitos'], list) else []
         return cls(
             codigo=row['codigo'],
@@ -348,6 +355,7 @@ class Curso(DatabaseModel):
     
     @classmethod
     def obtener_por_codigo(cls, codigo: str) -> Optional['Curso']:
+        """Obtiene un curso por su codigo."""
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -359,6 +367,7 @@ class Curso(DatabaseModel):
     
     @classmethod
     def obtener_por_semestre(cls, semestre: int) -> List['Curso']:
+        """Obtiene todos los cursos de un semestre especifico."""
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -411,6 +420,7 @@ class Tarea(DatabaseModel):
                  fecha_limite: datetime, completada: bool,
                  horas_estimadas: float = 4, dificultad: int = 3,
                  porcentaje_completado: int = 0):
+        """Inicializa una tarea con sus metadatos y estado."""
         self.id = id
         self.usuario_id = usuario_id
         self.curso_codigo = curso_codigo
@@ -438,6 +448,7 @@ class Tarea(DatabaseModel):
     
     @classmethod
     def from_row(cls, row) -> 'Tarea':
+        """Construye una Tarea desde una fila de la base de datos."""
         return cls(
             id=row['id'],
             usuario_id=row['usuario_id'],
@@ -456,6 +467,7 @@ class Tarea(DatabaseModel):
     def crear(cls, usuario_id: int, curso_codigo: str, titulo: str,
               descripcion: str, tipo: str, fecha_limite: str,
               horas_estimadas: float = 4, dificultad: int = 3) -> 'Tarea':
+        """Crea una tarea y devuelve la instancia recien creada."""
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -482,6 +494,7 @@ class Tarea(DatabaseModel):
     
     @classmethod
     def obtener_por_id(cls, tarea_id: int) -> Optional['Tarea']:
+        """Obtiene una tarea por su identificador."""
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -492,6 +505,7 @@ class Tarea(DatabaseModel):
         return cls.from_row(row) if row else None
     
     def marcar_completada(self, porcentaje: int = 100):
+        """Marca la tarea como completada y actualiza el porcentaje."""
         conn = self.get_connection()
         cursor = conn.cursor()
         
@@ -506,6 +520,7 @@ class Tarea(DatabaseModel):
         self.porcentaje_completado = porcentaje
     
     def actualizar_progreso(self, porcentaje: int):
+        """Actualiza el porcentaje de completado de la tarea."""
         conn = self.get_connection()
         cursor = conn.cursor()
 
@@ -521,6 +536,7 @@ class Tarea(DatabaseModel):
         self.completada = completada
     
     def eliminar(self):
+        """Elimina la tarea de la base de datos."""
         conn = self.get_connection()
         cursor = conn.cursor()
         
@@ -529,6 +545,7 @@ class Tarea(DatabaseModel):
         conn.close()
     
     def dias_restantes(self) -> int:
+        """Calcula cuantos dias faltan para la fecha limite."""
         delta = self.fecha_limite - datetime.now()
         return delta.days
 
@@ -541,6 +558,7 @@ class CalendarioInstitucional(DatabaseModel):
     def __init__(self, id: int, nombre_evento: str,
                  fecha_inicio: datetime, fecha_fin: datetime,
                  tipo: str, semestre: str, color: str):
+        """Inicializa un evento del calendario institucional."""
         self.id = id
         self.nombre_evento = nombre_evento
         self.descripcion = ""
@@ -553,6 +571,7 @@ class CalendarioInstitucional(DatabaseModel):
     
     @classmethod
     def from_row(cls, row):
+        """Construye un evento desde una fila de la base de datos."""
         return cls(
             id=row['id'],
             nombre_evento=row['nombre_evento'],
@@ -565,6 +584,7 @@ class CalendarioInstitucional(DatabaseModel):
     
     @classmethod
     def obtener_proximos(cls, dias: int = 60) -> List['CalendarioInstitucional']:
+        """Obtiene eventos a partir de la fecha actual."""
         conn = cls.get_connection()
         cursor = conn.cursor()
         
@@ -582,6 +602,7 @@ class CalendarioInstitucional(DatabaseModel):
     
     @classmethod
     def obtener_por_semestre(cls, semestre: str) -> List['CalendarioInstitucional']:
+        """Obtiene eventos filtrados por semestre."""
         conn = cls.get_connection()
         cursor = conn.cursor()
         

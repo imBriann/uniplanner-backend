@@ -12,6 +12,7 @@ class DatabaseManager:
     """Gestor de base de datos PostgreSQL"""
     
     def __init__(self, database_url=None):
+        """Inicializa el gestor con DATABASE_URL o un valor explicito."""
         self.database_url = database_url or os.environ.get('DATABASE_URL')
         
         if not self.database_url:

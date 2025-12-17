@@ -1,19 +1,3 @@
-"""
-API REST Mejorada - Sistema Académico UniPlanner
-
-API RESTful completa con:
-- Documentación de todas las funciones (docstrings)
-- Manejo robusto de errores
-- Validaciones de entrada
-- Sistema de logging profesional
-- Nuevos endpoints de funcionalidades avanzadas
-
-Paradigma: API REST + POO
-Autor: [Tu Nombre]
-Fecha: 2025-01-08
-Versión: 2.1.0
-"""
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -53,7 +37,7 @@ except ImportError:
     print("⚠️  Módulo validadores.py no disponible, usando validación básica")
 
 try:
-    from recomendaciones_funcional import (
+    from r_funcional import (
         generar_recomendaciones,
         calcular_carga_semanal,
         obtener_tareas_urgentes,
@@ -1307,10 +1291,12 @@ def obtener_logros(usuario):
 
 @app.errorhandler(404)
 def not_found(error):
+    """Maneja rutas no encontradas (404)."""
     return jsonify({'error': 'Endpoint no encontrado'}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
+    """Maneja errores internos del servidor (500)."""
     return jsonify({'error': 'Error interno del servidor'}), 500
 
 
